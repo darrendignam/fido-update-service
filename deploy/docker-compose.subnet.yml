@@ -1,0 +1,14 @@
+# Pin the stack network to an explicit subnet.
+#
+# Needed on hosts whose Docker default address pools are used up, where `up` fails with
+# "could not find an available, non-overlapping IPv4 address pool". The OPF build box is one:
+# every 172.17-32/16 and 192.168.0-112/20 pool is taken, and 192.168.128.0/17 is the private LAN.
+#
+# Enable through .env so every docker-compose command includes it:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.subnet.yml
+#   FIDOSIGS_SUBNET=10.250.10.0/24
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${FIDOSIGS_SUBNET:?set FIDOSIGS_SUBNET to a free subnet, e.g. 10.250.10.0/24}
