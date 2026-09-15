@@ -217,3 +217,23 @@ def test_main_exit_codes(tmp_path, monkeypatch, outcome, exit_code):
     monkeypatch.setattr(generator, 'generate', fake_generate)
     monkeypatch.setattr(generator.socket, 'setdefaulttimeout', lambda _: None)
     assert generator.main(['--format-dir', str(tmp_path)]) == exit_code
+
+
+def test_uncompilable_signatures_reports_invalid_repeats(tmp_path):
+    formats = tmp_path / 'formats.xml'
+    formats.write_text(
+        '<formats>'
+        '<format><puid>fmt/1</puid><signature><pattern><regex>(?s)\\A.{0,8}PK</regex></pattern></signature></format>'
+        '<format><puid>fmt/1558</puid><signature><pattern><regex>(?s)\\A.{3000,700}LHA</regex></pattern>'
+        '</signature></format>'
+        '</formats>')
+    failures = generator.uncompilable_signatures(str(formats))
+    assert [puid for puid, _ in failures] == ['fmt/1558']
+    assert 'min repeat greater than max repeat' in failures[0][1]
+
+
+def test_generate_warns_about_uncompilable_signatures(tmp_path, pronom, monkeypatch, caplog):
+    monkeypatch.setattr(generator, 'uncompilable_signatures', lambda path: [('fmt/3', 'bad repeat')])
+    with caplog.at_level('WARNING', logger=generator.LOGGER.name):
+        generator.generate(str(tmp_path / 'format'), str(tmp_path / 'work'), version=109, throttle=0)
+    assert 'fmt/3 has a signature fido cannot compile (bad repeat)' in caplog.text
