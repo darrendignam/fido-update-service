@@ -1,0 +1,85 @@
+name: publish
+
+# Build, smoke test and push ghcr.io/<owner>/fidosigs.
+#
+#   push to master  -> :latest, :sha-<commit>, :pronom-vNNN (newest bundled release)
+#   tag vX.Y.Z      -> :X.Y.Z, :X.Y
+#
+# `latest` is set only from master, never from a tag, so re-tagging an old commit cannot
+# roll production back by accident.
+on:
+  push:
+    branches: [master]
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Newest bundled signature release
+        id: signatures
+        run: echo "latest=$(ls fidosigs/resources/format | grep -E '^v[0-9]+$' | sort -V | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: fidosigs:smoke
+
+      # Exercises the paths fido itself requests, trailing slash included, and fails on any
+      # redirect: a 307 here is what made every client request cost three hops in production.
+      - name: Smoke test
+        env:
+          LATEST: ${{ steps.signatures.outputs.latest }}
+        run: |
+          docker run -d --name fidosigs -p 5000:5000 fidosigs:smoke
+          for attempt in $(seq 30); do curl -fs http://127.0.0.1:5000/format/latest/ >/dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:5000/format/latest/ | tee /dev/stderr | grep -q "version=\"$LATEST\""
+          for path in format/ "format/$LATEST/" format/latest/fido/ format/latest/droid/ format/latest/pronom/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:5000/$path")
+            echo "$path -> $code"
+            test "$code" = 200
+          done
+          docker rm -f fidosigs
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/fidosigs
+          flavor: latest=false
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=pronom-${{ steps.signatures.outputs.latest }},enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
