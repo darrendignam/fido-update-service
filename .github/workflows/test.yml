@@ -5,6 +5,7 @@ on:
   push:
     branches: [master]
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,9 +14,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -36,3 +37,4 @@ jobs:
           docker compose -f deploy/docker-compose.yml config -q
           docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.local.yml config -q
           docker compose -f deploy/docker-compose.yml --profile tunnel config -q
+          FIDOSIGS_SUBNET=10.250.10.0/24 docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.subnet.yml config -q
