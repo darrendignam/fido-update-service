@@ -131,6 +131,21 @@ def test_trailing_slash_paths_answer_directly_without_redirect(client, path):
         path, response.status_code, response.headers.get('location'))
 
 
+@pytest.mark.parametrize('path, expected_length', [
+    ('/', None),
+    ('/format/', None),
+    ('/format/latest/', None),
+    ('/format/v10/', None),
+    ('/format/latest/fido/', len(release_body('fido', 100))),
+])
+def test_head_requests_answer_like_get_without_a_body(client, path, expected_length):
+    response = client.head(path)
+    assert response.status_code == 200, '{} HEAD -> {}'.format(path, response.status_code)
+    assert response.content == b''
+    if expected_length is not None:
+        assert int(response.headers['content-length']) == expected_length
+
+
 def test_fido_client_check_and_update_against_service(client, tmp_path, monkeypatch):
     """Drive fido 1.6.1's real update code (fido -sigs check / update) against the service."""
     conf_dir = tmp_path / 'fido' / 'conf'

@@ -37,6 +37,8 @@ BUNDLED_FORMAT_DIR = Path(__file__).parent / 'resources' / 'format'
 RELEASE_DIR_PATTERN = re.compile(r'^v(\d+)$')
 VERSION_PATTERN = re.compile(r'^v?(\d+)$', re.IGNORECASE)
 LATEST = 'latest'
+# HEAD as well as GET: uptime monitors and `curl -I` probe with HEAD.
+READ_METHODS = ['GET', 'HEAD']
 RELEASE_FILE_NAMES = {
     'droid': 'DROID_SignatureFile-v{}.xml',
     'fido': 'formats-v{}.xml',
@@ -74,7 +76,7 @@ APP = FastAPI(title='fidosigs', docs_url=None, redoc_url=None, openapi_url=None,
 APP.add_middleware(TrailingSlashMiddleware)
 
 
-@APP.get('/', response_class=XMLResponse)
+@APP.api_route('/', methods=READ_METHODS, response_class=XMLResponse)
 def root() -> XMLResponse:
     """Return a list of the available services as XML."""
     services_xml = Element('services')
@@ -82,7 +84,7 @@ def root() -> XMLResponse:
     return _xml_response(services_xml)
 
 
-@APP.get('/format', response_class=XMLResponse)
+@APP.api_route('/format', methods=READ_METHODS, response_class=XMLResponse)
 def formats() -> XMLResponse:
     """Return a list of the available format signature files as XML, oldest first."""
     format_xml = Element('format')
@@ -92,13 +94,13 @@ def formats() -> XMLResponse:
     return _xml_response(format_xml)
 
 
-@APP.get('/format/latest', response_class=XMLResponse)
+@APP.api_route('/format/latest', methods=READ_METHODS, response_class=XMLResponse)
 def latest_version() -> XMLResponse:
     """Return the latest available format signature file version number as XML."""
     return _xml_response(Element('signature', version=_release_name(_latest_number())))
 
 
-@APP.get('/format/{version}', response_class=XMLResponse)
+@APP.api_route('/format/{version}', methods=READ_METHODS, response_class=XMLResponse)
 def version_details(version: str) -> XMLResponse:
     """List the file resources available for a version (NNN or vNNN) as XML."""
     number = resolve_version(version)
@@ -108,7 +110,7 @@ def version_details(version: str) -> XMLResponse:
     return _xml_response(version_xml)
 
 
-@APP.get('/format/{version}/{action}', response_class=FileResponse)
+@APP.api_route('/format/{version}/{action}', methods=READ_METHODS, response_class=FileResponse)
 def version_collateral(version: str, action: str) -> FileResponse:
     """
     Return a release file for a version (NNN, vNNN or latest).
