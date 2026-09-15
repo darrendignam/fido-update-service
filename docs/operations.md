@@ -3,13 +3,20 @@
 Host: `build` (`172.104.241.154`), Debian 9, Docker 19.03, standalone `docker-compose` v2.
 Stack: `/var/docker-compose-stacks/fidosigs-opf-labs/`, a copy of `deploy/` plus `format/`.
 
-```
+```text
 fidosigs-opf-labs/
   docker-compose.yml
   docker-compose.local.yml
-  .env                  from .env.example: image tag, tunnel token
+  docker-compose.subnet.yml
+  .env                  from .env.example: image tag, tunnel token, subnet
   format/vNNN/          live releases, mounted read-only at /data/format
 ```
+
+The host's Docker default address pools are exhausted, so its `.env` sets
+`COMPOSE_FILE=docker-compose.yml:docker-compose.subnet.yml` and
+`FIDOSIGS_SUBNET=10.250.10.0/24`. Passing `-f` on the command line replaces `COMPOSE_FILE`,
+so include the subnet overlay explicitly:
+`docker-compose -f docker-compose.yml -f docker-compose.subnet.yml -f docker-compose.local.yml up -d`.
 
 ## First deploy
 
