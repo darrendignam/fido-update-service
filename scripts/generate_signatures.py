@@ -29,6 +29,7 @@ so the output matches what fido users would build locally.
 from argparse import ArgumentParser
 import logging
 import os
+import re
 import shutil
 import socket
 import sys
@@ -169,6 +170,25 @@ def convert_to_fido(zip_path, formats_path):
     return len(info.formats)
 
 
+def uncompilable_signatures(formats_path):
+    """
+    Return (puid, error) for each fido signature regex Python cannot compile.
+
+    fido skips these at identification time, so the format cannot be matched
+    by signature. The known cause is in fido.prepare: it writes .{Offset,MaxOffset}
+    although PRONOM's MaxOffset is relative to Offset (DROID uses Offset+MaxOffset),
+    so any MaxOffset smaller than Offset yields an invalid repeat.
+    """
+    failures = []
+    for format_element in ElementTree.parse(formats_path).getroot().iter('format'):
+        for regex in format_element.iter('regex'):
+            try:
+                re.compile(regex.text or '')
+            except re.error as error:
+                failures.append((format_element.findtext('puid'), str(error)))
+    return failures
+
+
 def generate(format_dir, work_dir, version=None, throttle=DEFAULT_THROTTLE, force=False):
     """
     Build format_dir/vNNN for the given PRONOM version, or the latest if None.
@@ -201,11 +221,14 @@ def generate(format_dir, work_dir, version=None, throttle=DEFAULT_THROTTLE, forc
     zip_path = os.path.join(staging_dir, PRONOM_ZIP_NAME.format(version))
     write_pronom_zip(puids, records_dir, zip_path)
 
-    converted = convert_to_fido(zip_path, os.path.join(staging_dir, FORMATS_NAME.format(version)))
+    formats_path = os.path.join(staging_dir, FORMATS_NAME.format(version))
+    converted = convert_to_fido(zip_path, formats_path)
     LOGGER.info('Converted %d PRONOM formats to fido signatures', converted)
     if converted != len(puids):
         shutil.rmtree(staging_dir)
         raise PronomError('Converted {} formats but the DROID file lists {}'.format(converted, len(puids)))
+    for puid, error in uncompilable_signatures(formats_path):
+        LOGGER.warning('%s has a signature fido cannot compile (%s); fido will not match it by signature', puid, error)
 
     if os.path.isdir(release_dir):
         shutil.rmtree(release_dir)
