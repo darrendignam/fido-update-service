@@ -4,9 +4,9 @@ Format signature update service for [fido](https://github.com/openpreserve/fido)
 PRONOM signature releases to `fido -sigs check | update | list | vNNN`.
 
 | | |
-|---|---|
-| Service | https://fidosigs.opf-labs.org |
-| Legacy production | https://fidosigs.openpreservation.org (2022 image, v109, until cutover) |
+| --- | --- |
+| Service | <https://fidosigs.opf-labs.org> |
+| Legacy production | <https://fidosigs.openpreservation.org> (2022 image, v109, until cutover) |
 | Image | `ghcr.io/darrendignam/fidosigs` |
 | Operations | [docs/operations.md](docs/operations.md): deploy, publish a PRONOM release, roll back |
 
@@ -16,7 +16,7 @@ All responses are XML except downloads. Trailing slashes are accepted directly, 
 redirect, because fido sends them.
 
 | Path | Returns |
-|---|---|
+| --- | --- |
 | `/` | service list |
 | `/format` | every release, oldest first |
 | `/format/latest` | `<signature version="vNNN"/>`, the number fido compares against |
@@ -36,7 +36,7 @@ not tied to an image build. That coupling is why the service sat on v109 from 20
 
 ## Layout
 
-```
+```text
 fidosigs/main.py                  FastAPI app (entrypoint fidosigs.main:APP)
 fidosigs/resources/format/vNNN/   bundled releases, v70..latest
 scripts/generate_signatures.py    builds vNNN/ from PRONOM, non-interactive
@@ -56,7 +56,7 @@ uvicorn fidosigs.main:APP --reload      # http://127.0.0.1:8000/format/latest
 ## CI
 
 | Workflow | Trigger | Does |
-|---|---|---|
+| --- | --- | --- |
 | `test` | PR, push to master | pytest, compose files parse |
 | `publish` | push to master, tag `vX.Y.Z` | test, build, smoke test fido's paths, push to GHCR |
 | `update-signatures` | monthly, manual | generate the newest PRONOM release, open a PR |
@@ -73,6 +73,12 @@ Image tags: `latest`, `sha-<commit>` and `pronom-vNNN` from master; `X.Y.Z` and 
 - **Conversion is reproducible.** Regenerating `formats-v109.xml` from the 2022
   `pronom-xml-v109.zip` gives identical output apart from 3 md5 checksums of external
   reference files that have since changed upstream.
+- **fido mis-converts offset windows (upstream bug, not fixed here).** `fido.prepare` writes
+  `.{Offset,MaxOffset}`, but PRONOM's MaxOffset is relative: DROID matches
+  Offset..Offset+MaxOffset. In v125 this narrows 95 BOF windows across 60 formats, and 6
+  regexes do not compile at all (fmt/1558, 1646, 1669, 1670, 1738, 2115), so fido cannot
+  match those formats by signature. The service publishes fido's output unchanged; the
+  generator logs affected PUIDs. The fix belongs in `openpreserve/fido`.
 - **No container signatures.** fido pins `container-signature-UPDATE-ME.xml` for manual
   handling, so `/container` was a stub and has been removed.
 - **Alpine base image.** Debian-based Python images cannot start threads under the seccomp
