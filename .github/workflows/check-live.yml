@@ -1,0 +1,37 @@
+name: check-live
+
+# Weekly: fail if the live service serves an older release than PRONOM publishes.
+# Stale-but-up is how fidosigs actually failed (v109 served from 2022 to 2026) and no
+# uptime check can see it. A failed scheduled run notifies through GitHub Actions email.
+on:
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_URL: ${{ vars.FIDOSIGS_URL || 'https://fidosigs.opf-labs.org' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: pip install -r scripts/requirements.txt
+
+      - name: Compare live release with PRONOM
+        run: |
+          pronom=$(PYTHONPATH=scripts python -c 'import generate_signatures as g; print(g.latest_pronom_version())')
+          live=$(curl -fsS "$SERVICE_URL/format/latest/" | grep -oE 'version="v[0-9]+"' | grep -oE '[0-9]+')
+          echo "PRONOM v$pronom, $SERVICE_URL serves v$live"
+          if [ "$live" -lt "$pronom" ]; then
+            echo "::error::$SERVICE_URL serves v$live but PRONOM is at v$pronom. See docs/operations.md."
+            exit 1
+          fi

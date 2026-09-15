@@ -1,20 +1,31 @@
-FROM python:3.9-alpine
+# Alpine, not slim: Debian glibc starts threads with clone3, which the seccomp
+# profile of Docker < 20.10.10 rejects, so uvicorn cannot start on older hosts
+# (the OPF build box runs Docker 19.03).
+FROM python:3.12-alpine
 
-LABEL maintainer="carl.wilson@openpreservation.org" \
-      org.openpreservation.vendor="Open Preservation Foundation" \
-      version="0.1"
+LABEL org.opencontainers.image.title="fidosigs" \
+      org.opencontainers.image.description="FIDO format signature update service" \
+      org.opencontainers.image.vendor="Open Preservation Foundation" \
+      org.opencontainers.image.licenses="Apache-2.0"
 
-RUN  apk update && apk --no-cache --update-cache add gcc build-base libxml2-dev libxslt-dev git
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /src
 
-COPY requirements.txt /src/requirements.txt
-RUN pip install -U pip && pip install -U -r /src/requirements.txt
-COPY ./fidosigs /src/fidosigs
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN adduser --uid 1000 -h /opt/fidosigs -S fidosig
+COPY fidosigs ./fidosigs
 
-USER fidosig
+RUN adduser -D -H -u 1000 fidosigs
+USER fidosigs
 
-EXPOSE 80
-ENTRYPOINT uvicorn fidosigs.main:APP --host 0.0.0.0 --port 80
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget -qO /dev/null http://127.0.0.1:5000/format/latest || exit 1
+
+# Proxy headers are trusted from any peer because the service is only ever
+# reached through a proxy on a private Docker network.
+ENTRYPOINT ["uvicorn", "fidosigs.main:APP", "--host", "0.0.0.0", "--port", "5000", "--proxy-headers", "--forwarded-allow-ips", "*"]
