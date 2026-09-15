@@ -18,159 +18,155 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 FastAPI application routes for the FIDO sig service.
+
+Releases are directories named vNNN under the format directory, which is
+FIDOSIGS_FORMAT_DIR when set and the image-bundled resources otherwise.
+Adding a release is adding a directory; no code or restart is involved.
 """
 import logging
 import os
+import re
+from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
-import importlib_resources
 
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import FileResponse, PlainTextResponse 
+from fastapi.responses import FileResponse
 
-APP = FastAPI()
+FORMAT_DIR_ENV = 'FIDOSIGS_FORMAT_DIR'
+BUNDLED_FORMAT_DIR = Path(__file__).parent / 'resources' / 'format'
+RELEASE_DIR_PATTERN = re.compile(r'^v(\d+)$')
+VERSION_PATTERN = re.compile(r'^v?(\d+)$', re.IGNORECASE)
+LATEST = 'latest'
+RELEASE_FILE_NAMES = {
+    'droid': 'DROID_SignatureFile-v{}.xml',
+    'fido': 'formats-v{}.xml',
+    'pronom': 'pronom-xml-v{}.zip',
+}
+# Element names in the version details document, keyed by download action.
+RELEASE_ELEMENTS = {'droid': 'droid', 'fido': 'formats', 'pronom': 'pronom'}
 
-XML_MIME = 'text/xml'
-XML_APP_MIME = 'application/xml'
+LOGGER = logging.getLogger(__name__)
+
 
 class XMLResponse(Response):
-    media_type = XML_APP_MIME
+    media_type = 'application/xml'
 
-@APP.get(
-    "/",
-    response_class=XMLResponse
-)
+
+class TrailingSlashMiddleware:
+    """
+    Route /path/ exactly as /path.
+
+    fido requests every URL with a trailing slash. Starlette's default answer is
+    a redirect built from the request scheme, which behind a TLS-terminating
+    proxy is http://, costing clients two extra hops per request.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] == 'http' and len(scope['path']) > 1 and scope['path'].endswith('/'):
+            scope = dict(scope, path=scope['path'].rstrip('/') or '/')
+        await self.app(scope, receive, send)
+
+
+APP = FastAPI(title='fidosigs', docs_url=None, redoc_url=None, openapi_url=None, redirect_slashes=False)
+APP.add_middleware(TrailingSlashMiddleware)
+
+
+@APP.get('/', response_class=XMLResponse)
 def root() -> XMLResponse:
     """Return a list of the available services as XML."""
     services_xml = Element('services')
     SubElement(services_xml, 'format', url='format')
-    SubElement(services_xml, 'container', url='container')
-    return tostring(services_xml, encoding='utf8', method='xml')
+    return _xml_response(services_xml)
 
-@APP.get(
-    "/format",
-    response_class=XMLResponse
-)
+
+@APP.get('/format', response_class=XMLResponse)
 def formats() -> XMLResponse:
-    """Return a list of the available format signature files as XML."""
+    """Return a list of the available format signature files as XML, oldest first."""
     format_xml = Element('format')
-    sigs = SubElement(format_xml, 'signatures')
-    for sigdir in _get_sig_dirs():
-        SubElement(sigs, 'signature', version=sigdir)
-    return tostring(format_xml, encoding='utf8', method='xml')
+    signatures = SubElement(format_xml, 'signatures')
+    for number in available_versions():
+        SubElement(signatures, 'signature', version=_release_name(number))
+    return _xml_response(format_xml)
 
 
-@APP.get(
-    "/format/latest",
-    response_class=XMLResponse
-)
-def latest_ver() -> XMLResponse:
+@APP.get('/format/latest', response_class=XMLResponse)
+def latest_version() -> XMLResponse:
     """Return the latest available format signature file version number as XML."""
-    latest = ''
-    for sigdir in _get_sig_dirs():
-        latest = _latest(latest, sigdir)
-    format_xml = Element('signature', version=latest)
-    return tostring(format_xml, encoding='utf8', method='xml')
+    return _xml_response(Element('signature', version=_release_name(_latest_number())))
 
 
-@APP.get(
-    "/format/{version}",
-    response_class=XMLResponse
-)
-def version_details(version) -> XMLResponse:
-    """List the file resources available for a particualr version as XML."""
-    ver_dir = _get_sig_dir(version)
-    logging.debug('Version {} dir is {}'.format(version, ver_dir))
-    if ver_dir is None:
-        raise HTTPException (status_code=404, detail='No sig files found for version {}'.format(version))
-    version_xml = Element('signature', version=version)
-    SubElement(version_xml, 'droid', url='DROID_SignatureFile-{}.xml'.format(version))
-    SubElement(version_xml, 'formats', url='formats-{}.xml'.format(version))
-    SubElement(version_xml, 'pronom', url='pronom-xml-{}.zip'.format(version))
-    return tostring(version_xml, encoding='utf8', method='xml')
+@APP.get('/format/{version}', response_class=XMLResponse)
+def version_details(version: str) -> XMLResponse:
+    """List the file resources available for a version (NNN or vNNN) as XML."""
+    number = resolve_version(version)
+    version_xml = Element('signature', version=_release_name(number))
+    for action, file_name in RELEASE_FILE_NAMES.items():
+        SubElement(version_xml, RELEASE_ELEMENTS[action], url=file_name.format(number))
+    return _xml_response(version_xml)
 
 
-@APP.get(
-    "/format/{version}/{action}",
-    response_class=FileResponse
-)
-def version_collatoral(version, action) -> FileResponse:
-    """Return the appropriate resource file for version parameter, or latest for latest.
-       Action can be one of fido | droid | pronom.
+@APP.get('/format/{version}/{action}', response_class=FileResponse)
+def version_collateral(version: str, action: str) -> FileResponse:
     """
-    if version.lower() == 'latest':
-        version = ''
-        for sigdir in _get_sig_dirs():
-            version = _latest(version, sigdir)
-    ver_dir = _get_sig_dir(version)
-    if ver_dir is None or action.lower() not in ['droid', 'pronom', 'fido']:
-        message = 'No resources found for version {}, action {}'.format(version, action)
-        logging.info(message)
-        raise HTTPException (status_code=404, detail=message)
-    logging.debug('Version {} dir is {} for action {}'.format(version, ver_dir, action))
-    filename = 'formats-v{}.xml'.format(version)
-    if action.lower() == 'droid':
-        logging.debug("Sending DROID")
-        filename = 'DROID_SignatureFile-v{}.xml'.format(version)
-    elif action.lower() == 'pronom':
-        logging.debug("Sending PRONOM")
-        filename = 'pronom-xml-v{}.zip'.format(version)
-    else:
-        logging.debug("Sending FIDO")
-    return FileResponse(os.path.join(ver_dir, filename), filename=filename)
+    Return a release file for a version (NNN, vNNN or latest).
+
+    Action is one of fido | droid | pronom.
+    """
+    file_name_template = RELEASE_FILE_NAMES.get(action.lower())
+    if file_name_template is None:
+        raise HTTPException(status_code=404, detail='Unknown action {}, expected one of {}'.format(
+            action, ' | '.join(RELEASE_FILE_NAMES)))
+    number = resolve_version(version)
+    file_name = file_name_template.format(number)
+    path = format_dir() / _release_name(number) / file_name
+    if not path.is_file():
+        LOGGER.error('Release %s is missing %s', _release_name(number), file_name)
+        raise HTTPException(status_code=404, detail='No {} file found for version {}'.format(action, version))
+    return FileResponse(path, filename=file_name)
 
 
-@APP.get(
-    "/container/",
-    responses={
-      200: {
-          "content": {XML_APP_MIME: {}},
-      }
-    },
-)
-def containers() -> XMLResponse:
-    """Return a list of the available services as XML."""
-    services_xml = Element('services')
-    SubElement(services_xml, 'signature', url='signature')
-    SubElement(services_xml, 'container', url='container')
-    return tostring(services_xml, encoding='utf8', method='xml')
+def format_dir() -> Path:
+    """Return the directory holding the vNNN release directories."""
+    return Path(os.environ.get(FORMAT_DIR_ENV) or BUNDLED_FORMAT_DIR)
 
 
-def _latest(latest: str, to_compare: str) -> str:
-    """Return the most recent version number of latest and to_compare."""
-    if not latest:
-        return to_compare
-    if not to_compare:
-        return latest
-    lat_ver = _remove_prefix(latest)
-    comp_ver = _remove_prefix(to_compare)
-    return latest if int(lat_ver) > int(comp_ver) else to_compare
+def available_versions() -> list[int]:
+    """Return the number of every vNNN release directory, ascending."""
+    try:
+        with os.scandir(format_dir()) as entries:
+            return sorted(
+                int(match.group(1))
+                for entry in entries
+                if entry.is_dir() and (match := RELEASE_DIR_PATTERN.match(entry.name))
+            )
+    except FileNotFoundError:
+        LOGGER.error('Format directory %s does not exist', format_dir())
+        return []
 
 
-def _remove_prefix(text: str, prefix: str='v') -> str:
-    """Return the value text with a single prefix character removed if present."""
-    return text[len(prefix):] if text.startswith(prefix) else text
+def resolve_version(version: str) -> int:
+    """Return the release number for NNN, vNNN or latest, raising a 404 if there is no such release."""
+    if version.lower() == LATEST:
+        return _latest_number()
+    match = VERSION_PATTERN.match(version)
+    if match is None or int(match.group(1)) not in available_versions():
+        raise HTTPException(status_code=404, detail='No sig files found for version {}'.format(version))
+    return int(match.group(1))
 
 
-def _get_sig_dirs():
-    dirs = []
-    root = str(importlib_resources.files('fidosigs.resources').joinpath('format'))
-    for _, subdirs, _ in os.walk(root):
-        for subdir in subdirs:
-            if str(subdir).startswith('v'):
-                dirs.append(str(subdir))
-    return dirs
+def _latest_number() -> int:
+    versions = available_versions()
+    if not versions:
+        raise HTTPException(status_code=404, detail='No signature releases available')
+    return versions[-1]
 
 
-def _get_sig_dir(version: str):
-    if not version.startswith('v'):
-        version = 'v' + version
-    root = str(importlib_resources.files('fidosigs.resources').joinpath('format'))
-    for _, subdirs, _ in os.walk(root):
-        for subdir in subdirs:
-            if str(subdir) == version:
-                return os.path.join(root, subdir)
-    return None
+def _release_name(number: int) -> str:
+    return 'v{}'.format(number)
 
 
-if __name__ == "__main__":
-    APP.run(host='0.0.0.0', threaded=True)
+def _xml_response(element: Element) -> XMLResponse:
+    return XMLResponse(tostring(element, encoding='utf8', method='xml'))
