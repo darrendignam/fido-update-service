@@ -1,0 +1,43 @@
+name: fidosigs
+
+# FIDO format signature update service, the endpoint behind `fido -sigs check|update`.
+#
+#   web          -> uvicorn on :5000, internal only, serves ./format read-only
+#   cloudflared  -> Cloudflare Tunnel ingress (profile: tunnel), no host ports, TLS at the edge
+#
+# Signature releases live on the host in ./format, not in the image, so publishing a new
+# PRONOM release is a directory copy: no rebuild, no restart. See docs/operations.md.
+#
+#   Local:   docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#   Tunnel:  docker-compose --profile tunnel up -d
+#
+# The OPF build box has the standalone Compose v2 binary (docker-compose), not the plugin.
+
+services:
+  web:
+    image: ${FIDOSIGS_IMAGE:-ghcr.io/darrendignam/fidosigs}:${FIDOSIGS_TAG:-latest}
+    expose:
+      - "5000"
+    environment:
+      FIDOSIGS_FORMAT_DIR: /data/format
+    volumes:
+      - ./format:/data/format:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  # Point the tunnel's public hostname at http://web:5000 in the Zero Trust dashboard.
+  # That is the service name on this compose network, not a host port.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN:-}"
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped

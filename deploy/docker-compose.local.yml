@@ -1,0 +1,6 @@
+# Local-testing overlay: publish the service on localhost only.
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
+services:
+  web:
+    ports:
+      - "127.0.0.1:${FIDOSIGS_LOCAL_PORT:-8095}:5000"
