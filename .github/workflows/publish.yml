@@ -24,6 +24,8 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: false
     steps:
       - uses: actions/checkout@v7
 
