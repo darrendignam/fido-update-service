@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FFSignatureFile DateCreated="2022-11-01T11:18:43" Version="109" xmlns="http://www.nationalarchives.gov.uk/pronom/SignatureFile">
+    <InternalSignatureCollection/>
+    <FileFormatCollection>
+        <FileFormat ID="11" Name="Microsoft Word for Macintosh Document" PUID="x-fmt/2" Version="4.0"/>
+        <FileFormat ID="13" Name="Online Description Tool Format" PUID="x-fmt/3"/>
+        <FileFormat ID="679" Name="Graphics Interchange Format" PUID="fmt/3" Version="87a"/>
+    </FileFormatCollection>
+</FFSignatureFile>
