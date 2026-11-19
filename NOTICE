@@ -1,0 +1,40 @@
+fidosigs
+Copyright 2022-2026 The Open Preservation Foundation
+
+This product includes software developed at
+the Open Preservation Foundation (https://openpreservation.org/).
+
+Derived from openpreserve/fido-update-service
+(https://github.com/openpreserve/fido-update-service).
+
+--------------------------------------------------------------------------------
+Related projects
+--------------------------------------------------------------------------------
+
+fido
+  Copyright 2010 The Open Preservation Foundation
+  Apache License 2.0. https://github.com/openpreserve/fido
+  The client this service answers. The signature generator installs it as
+  opf-fido and reuses its PRONOM-to-fido conversion (fido.prepare.FormatInfo).
+
+--------------------------------------------------------------------------------
+Bundled data
+--------------------------------------------------------------------------------
+
+PRONOM and DROID signature files
+  Produced by The National Archives (UK).
+  https://www.nationalarchives.gov.uk/PRONOM/
+  https://digital-preservation.github.io/droid/
+  The release directories under fidosigs/resources/format/ (formats-vNNN.xml,
+  DROID_SignatureFile-vNNN.xml, pronom-xml-vNNN.zip) are redistributed
+  PRONOM data, or fido's conversion of it. They are not covered by the Apache
+  License 2.0 that applies to the code in this repository. Consult The
+  National Archives for the terms that apply to PRONOM.
+
+--------------------------------------------------------------------------------
+Runtime dependencies (installed, not bundled in source)
+--------------------------------------------------------------------------------
+
+FastAPI, Uvicorn, Python
+Cloudflare cloudflared (https://github.com/cloudflare/cloudflared), the optional
+tunnel container in deploy/docker-compose.yml
