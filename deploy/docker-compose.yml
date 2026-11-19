@@ -6,7 +6,7 @@ name: fidosigs
 #   cloudflared  -> Cloudflare Tunnel ingress (profile: tunnel), no host ports, TLS at the edge
 #
 # Signature releases live on the host in ./format, not in the image, so publishing a new
-# PRONOM release is a directory copy: no rebuild, no restart. See docs/operations.md.
+# PRONOM release is a directory copy: no rebuild, no restart.
 #
 #   Local:   docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
 #   Tunnel:  docker-compose --profile tunnel up -d

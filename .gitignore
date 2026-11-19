@@ -4,3 +4,4 @@ __pycache__/
 .work/
 deploy/.env
 deploy/format/
+notes/

@@ -8,7 +8,6 @@ PRONOM signature releases to `fido -sigs check | update | list | vNNN`.
 | Service | <https://fidosigs.opf-labs.org> |
 | Legacy production | <https://fidosigs.openpreservation.org> (2022 image, v109, until cutover) |
 | Image | `ghcr.io/darrendignam/fidosigs` |
-| Operations | [docs/operations.md](docs/operations.md): deploy, publish a PRONOM release, roll back |
 
 ## API
 
@@ -85,6 +84,18 @@ Image tags: `latest`, `sha-<commit>` and `pronom-vNNN` from master; `X.Y.Z` and 
   profile of Docker < 20.10.10 (clone3), which is what the OPF build box runs.
 - **PRONOM throttle.** The generator waits 0.5 s between record requests: about 30 minutes
   for 2,571 formats. Do not parallelise it.
+
+## License and credits
+
+Code: [Apache License 2.0](LICENSE.txt). Third-party attributions, including the PRONOM data
+bundled in the image, are in [NOTICE](NOTICE).
+
+- [Open Preservation Foundation](https://openpreservation.org/): original service, fido.
+- [fido](https://github.com/openpreserve/fido): the client this serves, and the PRONOM-to-fido
+  conversion the generator reuses.
+- [PRONOM](https://www.nationalarchives.gov.uk/PRONOM/) and
+  [DROID](https://digital-preservation.github.io/droid/), The National Archives (UK): the
+  signature data.
 
 ## History
 
